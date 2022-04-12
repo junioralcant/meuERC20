@@ -1,4 +1,4 @@
-# Como criar contrato ERC20 mais testes
+# Como criar um contrato ERC20 mais testes
 ## CRIANDO PROJETO COM HARDHAT
 1 - Vamos criar um projeto usando o Hardhat, abra o terminal e use o comando 
 ```mkdir meu-erc20``` para criar uma pastar e ```cd meu-erc20``` para entrar nela.
