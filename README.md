@@ -1,46 +1,151 @@
-# Advanced Sample Hardhat Project
+# Como criar contrato ERC20 mais testes
+## CRIANDO PROJETO COM HARDHAT
+1 - Vamos criar um projeto usando o Hardhat, abra o terminal e use o comando 
+```mkdir meu-erc20``` para criar uma pastar e ```cd meu-erc20``` para entrar nela.
 
-This project demonstrates an advanced Hardhat use case, integrating other tools commonly used alongside Hardhat in the ecosystem.
+2 Execute o camando ```npx hardhat``` para criar o projeto. Selecione Create an advanced sample project that uses TypeScript
+(agora é esperar a instalação). Com a instalação finalizada, foi criado um projeto com tudo oque precisamos para trabalhar 
+no nosso contrato.
 
-The project comes with a sample contract, a test for that contract, a sample script that deploys that contract, and an example of a task implementation, which simply lists the available accounts. It also comes with a variety of other tools, preconfigured to work with the project code.
+3 - Na pasta contracts ira ficar os nossos contratos Solidity e na pasta test os nossos testes (inclusive ele já cria um contrato
+simples e os testes).
 
-Try running some of the following tasks:
+4 - No arquivo ```package.json```, em ```"scripts": {}```, iremos criar dois comandos, ```"compile": "hardhat compile"``` para compilar os contratos e ```test": "hardhat test"``` para rodar os nossos testes.
+```
+"scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test"
+}
+```
+5 - Agora com o terminal a berto na pasta do projeto, podemos usar o camando ```npm run compile``` para compilar e o ```npm run test``` para rodar 
+os testes.
 
-```shell
-npx hardhat accounts
-npx hardhat compile
-npx hardhat clean
-npx hardhat test
-npx hardhat node
-npx hardhat help
-REPORT_GAS=true npx hardhat test
-npx hardhat coverage
-npx hardhat run scripts/deploy.ts
-TS_NODE_FILES=true npx ts-node scripts/deploy.ts
-npx eslint '**/*.{js,ts}'
-npx eslint '**/*.{js,ts}' --fix
-npx prettier '**/*.{json,sol,md}' --check
-npx prettier '**/*.{json,sol,md}' --write
-npx solhint 'contracts/**/*.sol'
-npx solhint 'contracts/**/*.sol' --fix
+## CRIANDO CONTRATO ERC20
+
+1 - Iremos usar a bliblioteca do [OpenZeppelin](https://docs.openzeppelin.com/contracts/4.x/) para criar nosso contrato, no terminal use o comando ```npm install @openzeppelin/contracts``` para instalar a bliblioteca. Agora está tudo pronto para colocarmos a mão na massa.
+
+2 - Na pasta contracts crie um novo contrato, iremos criar com o nome ```MeuContrato.sol```. Coloque o seguinte código.
+```
+// SPDX-License-Identifier: MIT
+
+// Versão do solidity
+pragma solidity ^0.8.0;
+
+// Importa o contrato ERC20PresetFixedSupply do openzeppelin
+import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
+
+contract MeuContrato is ERC20PresetFixedSupply {
+    // Cria o construtor e define nome, símbolo, total supply e dono dos tokens
+    // 1000000000 * 10**decimals() é o calculo para define a quantidade de 1 bilhão de tokens
+    constructor() ERC20PresetFixedSupply("MeuContrato", "MCT", 1000000000 * 10**decimals(), _msgSender()) {}
+} 
 ```
 
-# Etherscan verification
+3 - Na pasta tests crie um arquivo com nome ```MeuContrato.test.ts```. Mas antes disso rode o comando ```npm run compile``` para compilar
+o codigo que acabamos de fazer. Coloque o seguinte código.
+```
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import {SignerWithAddress} from "@nomiclabs/hardhat-ethers/signers";
+import {MeuContrato, MeuContrato__factory} from "../typechain";
 
-To try out Etherscan verification, you first need to deploy a contract to an Ethereum network that's supported by Etherscan, such as Ropsten.
+describe("MeuContrato", function () {
+    let owner: SignerWithAddress;
+    let address1: SignerWithAddress;
+    let address2: SignerWithAddress;
+    let contract: MeuContrato;
 
-In this project, copy the .env.example file to a file named .env, and then edit it to fill in the details. Enter your Etherscan API key, your Ropsten node URL (eg from Alchemy), and the private key of the account which will send the deployment transaction. With a valid .env file in place, first deploy your contract:
+    before(async function () {
+        [owner, address1, address2] = await ethers.getSigners();
+    });
 
-```shell
-hardhat run --network ropsten scripts/deploy.ts
+    beforeEach(async function () {
+        let contractFactory = <MeuContrato__factory>await ethers.getContractFactory("MeuContrato");
+        contract = await contractFactory.deploy();
+        contract = await contract.deployed();
+    });
+
+    // Faz o teste e verifica se nome o símbolo e o tatal de tokens é igual ao oque colocamos no código do contrato
+    it("Verifica o nome, símbolo e tatal suplay", async function () {
+        // verifica o nome do contrato
+        expect((await contract.name())).to.equal("MeuContrato");
+        // verifica o símbolo do contrato
+        expect((await contract.symbol())).to.equal("MCT");
+        // verifica a quantidade de tokens
+        expect( ethers.utils.formatEther(await contract.balanceOf(owner.address))).to.equal("1000000000.0");
+    });
+});
 ```
 
-Then, copy the deployment address and paste it in to replace `DEPLOYED_CONTRACT_ADDRESS` in this command:
+4 - Nesse momento já temos o nosso primeiro contrato criado, agora vamos dar uma encrementada nele e adicinar a função para retirar qualquer token ERC20
+que tenha sido transferido para endereço do nosso contrato.
 
-```shell
-npx hardhat verify --network ropsten DEPLOYED_CONTRACT_ADDRESS "Hello, Hardhat!"
+```
+// Função para retirar qualquer ERC20 do nosso contrato
+// mas apenas o Owner (dono do contrato pode usar essa função)
+// por conta do modificador onlyOwner()
+function withdrawERC20(
+    address tokenAddress,
+    address to,
+    uint256 amount
+) external virtual onlyOwner() {
+    // Verifica se é um ERC20
+    require(tokenAddress.isContract(), "ERC20 token address must be a contract");
+
+    IERC20 tokenContract = IERC20(tokenAddress);
+
+    // Verifica se a quantidade de tokens é igual ou maior que a quantidade a ser transferida
+    require(
+        tokenContract.balanceOf(address(this)) >= amount,
+        "You are trying to withdraw more funds than available"
+    );
+
+    // Verifica se a transferência foi feita com sucesso
+    require(tokenContract.transfer(to, amount), "Fail on transfer");
+}
+```
+5 - Agora vamos fazer nossos testes. Novamente no arquivo MeuContrato.test.ts adicione o seguinte codigo abaixo do teste anterior.
+
+```
+it("Faz transferênca de tokens", async function () {
+  // transfere tokens para o endereço1
+  // essa função transfer é do contrato ERC20PresetFixedSupply que herda do ERC20
+  await contract.transfer(address1.address, 2);
+
+  // Conecta o Address1 ao contrato
+  contract = contract.connect(address1);
+
+  // transfere tokens para o endereço do contrato
+  await contract.transfer(contract.address, 2);
+
+  // Conecta o dono do contrato
+  contract = contract.connect(owner);
+
+  // Retira tokens do endereço do contrato
+  await contract.withdrawERC20(contract.address, owner.address, 2);
+
+  expect(ethers.utils.formatEther(await contract.balanceOf(contract.address))).to.equal("0.0");
+});
 ```
 
-# Performance optimizations
+6 - Vamos adicinar uma função chamada withdraw que transfere todo Ether que tem no endereço do nosso contrato para o dono do contrato.
+```
+// Função que transfere ether do contrato para o Owner, o dono do contrato
+// mas apenas o Owner (dono do contrato pode usar essa função)
+// por conta do modificador onlyOwner()
+function withdraw() onlyOwner public {
+    // Pega toda a quantidade ether disponível
+    uint256 balance = address(this).balance;
+    console.log(balance);
+    // Transfere a quantidade recuperada para o owner
+    Address.sendValue(payable(msg.sender), balance);
+} 
+```
 
-For faster runs of your tests and scripts, consider skipping ts-node's type checking by setting the environment variable `TS_NODE_TRANSPILE_ONLY` to `1` in hardhat's environment. For more details see [the documentation](https://hardhat.org/guides/typescript.html#performance-optimizations).
+7 - Na última linha do teste anterior vamos adicionar o seguinte.
+
+```
+await contract.withdraw();
+```
+
+8 - Por fim, finalizamos o nosso contrato. Agora é só usar os comandos ```npm run compile``` para compilar os contratos e ```npm run test``` para rodar os testes. Fique de olho pois esse é só o primeiro capítolo da nossa série.
